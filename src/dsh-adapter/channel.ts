@@ -3459,6 +3459,26 @@ ${output}
     refreshMode()
     agentSubscriptions = [
       installModelSelection(agent.ctx, selection),
+      // A resumed agent's options carry no model (issue #30 keeps the route
+      // its own log records), and `selection.current` stays undefined until an
+      // effort is applied — so a persona referencing {{model}}/{{provider}}
+      // would fail assembly ("has no value for this assembly") before any
+      // model call. Declare the route the session continues on, assemble-only:
+      // request routing and effort stay exactly as installModelSelection and
+      // the loop leave them.
+      agent.ctx.on('system-prompt/assemble', async (_assembly, _context, next) => {
+        const assembled = await next()
+        if (assembled.variables.model !== undefined && assembled.variables.provider !== undefined) return assembled
+        const route = recordedModelRoute(agent.session.events) ?? { provider: state.provider, model: state.model }
+        return {
+          ...assembled,
+          variables: {
+            ...assembled.variables,
+            ...assembled.variables.model === undefined ? { model: route.model } : {},
+            ...assembled.variables.provider === undefined ? { provider: route.provider } : {},
+          },
+        }
+      }),
       ctx.on('agent/status', ({ agent: subject, status }) => {
         if (subject !== agent) return
         state.status = status
